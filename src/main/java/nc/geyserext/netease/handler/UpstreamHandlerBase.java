@@ -1,0 +1,424 @@
+/*
+ * Copyright (c) 2026 EiluDick/ZDarkZ
+ * Released under the MIT License.
+ */
+
+package nc.geyserext.netease.handler;
+
+import io.netty.buffer.Unpooled;
+import org.cloudburstmc.math.vector.Vector2f;
+import org.cloudburstmc.protocol.bedrock.BedrockDisconnectReasons;
+import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
+import org.cloudburstmc.protocol.bedrock.codec.compat.BedrockCompat;
+import org.cloudburstmc.protocol.bedrock.data.PacketCompressionAlgorithm;
+import org.cloudburstmc.protocol.bedrock.data.ResourcePackType;
+import org.cloudburstmc.protocol.bedrock.netty.codec.compression.CompressionStrategy;
+import org.cloudburstmc.protocol.bedrock.netty.codec.compression.SimpleCompressionStrategy;
+import org.cloudburstmc.protocol.bedrock.netty.codec.compression.ZlibCompression;
+import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
+import org.cloudburstmc.protocol.bedrock.packet.LoginPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ModalFormResponsePacket;
+import org.cloudburstmc.protocol.bedrock.packet.NetworkSettingsPacket;
+import org.cloudburstmc.protocol.bedrock.packet.PlayStatusPacket;
+import org.cloudburstmc.protocol.bedrock.packet.PlayerAuthInputPacket;
+import org.cloudburstmc.protocol.bedrock.packet.RequestNetworkSettingsPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ResourcePackChunkDataPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ResourcePackChunkRequestPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ResourcePackClientResponsePacket;
+import org.cloudburstmc.protocol.bedrock.packet.ResourcePackDataInfoPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ResourcePackStackPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ResourcePacksInfoPacket;
+import org.cloudburstmc.protocol.bedrock.packet.SetTitlePacket;
+import org.cloudburstmc.protocol.common.PacketSignal;
+import org.cloudburstmc.protocol.common.util.Zlib;
+import org.geysermc.api.util.BedrockPlatform;
+import org.geysermc.geyser.Constants;
+import org.geysermc.geyser.GeyserImpl;
+import org.geysermc.geyser.api.event.bedrock.SessionInitializeEvent;
+import org.geysermc.geyser.api.network.AuthType;
+import org.geysermc.geyser.api.pack.PackCodec;
+import org.geysermc.geyser.api.pack.ResourcePack;
+import org.geysermc.geyser.api.pack.ResourcePackManifest;
+import org.geysermc.geyser.api.pack.option.ResourcePackOption;
+import org.geysermc.geyser.event.type.SessionLoadResourcePacksEventImpl;
+import org.geysermc.geyser.pack.GeyserResourcePack;
+import org.geysermc.geyser.pack.ResourcePackHolder;
+import org.geysermc.geyser.pack.url.GeyserUrlPackCodec;
+import org.geysermc.geyser.registry.BlockRegistries;
+import org.geysermc.geyser.registry.Registries;
+import org.geysermc.geyser.registry.loader.ResourcePackLoader;
+import org.geysermc.geyser.session.GeyserSession;
+import org.geysermc.geyser.network.GameProtocol;
+import org.geysermc.geyser.session.PendingMicrosoftAuthentication;
+import org.geysermc.geyser.text.GeyserLocale;
+import org.geysermc.geyser.util.LoginEncryptionUtils;
+import org.geysermc.geyser.util.MathUtils;
+import org.geysermc.geyser.util.VersionCheckUtils;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.SeekableByteChannel;
+import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Deque;
+import java.util.OptionalInt;
+import java.util.Queue;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
+
+public class UpstreamHandlerBase extends LoggingPacketHandler {
+
+    protected boolean networkSettingsRequested = false;
+    protected boolean receivedLoginPacket = false;
+    protected boolean finishedResourcePackSending = false;
+    protected final Deque<String> packsToSend = new ArrayDeque<>();
+    protected final CompressionStrategy compressionStrategy;
+    private static final int PACKET_SEND_DELAY = 4 * 50;
+    private final Queue<ResourcePackChunkRequestPacket> chunkRequestQueue = new ConcurrentLinkedQueue<>();
+    private boolean currentlySendingChunks = false;
+    protected SessionLoadResourcePacksEventImpl resourcePackLoadEvent;
+
+    public UpstreamHandlerBase(GeyserImpl geyser, GeyserSession session) {
+        super(geyser, session);
+
+        ZlibCompression compression = new ZlibCompression(Zlib.RAW);
+        compression.setLevel(this.geyser.config().advanced().bedrock().compressionLevel());
+        this.compressionStrategy = new SimpleCompressionStrategy(compression);
+    }
+
+    private PacketSignal translateAndDefault(BedrockPacket packet) {
+        Registries.BEDROCK_PACKET_TRANSLATORS.translate(packet.getClass(), packet, session, false);
+        return PacketSignal.HANDLED;
+    }
+
+    @Override
+    PacketSignal defaultHandler(BedrockPacket packet) {
+        return translateAndDefault(packet);
+    }
+
+    protected boolean setCorrectCodec(int protocolVersion) {
+        BedrockCodec packetCodec = GameProtocol.getBedrockCodec(protocolVersion);
+        if (packetCodec == null) {
+            String supportedVersions = GameProtocol.getAllSupportedBedrockVersions();
+            if (protocolVersion > GameProtocol.DEFAULT_BEDROCK_PROTOCOL) {
+                String disconnectMessage = GeyserLocale.getLocaleStringLog("geyser.network.outdated.server", supportedVersions);
+                OptionalInt latestRelease = VersionCheckUtils.getLatestBedrockRelease();
+                if (latestRelease.isPresent() && latestRelease.getAsInt() == protocolVersion) {
+                    disconnectMessage += "\n" + GeyserLocale.getLocaleStringLog("geyser.version.new.on_disconnect", Constants.GEYSER_DOWNLOAD_LOCATION);
+                }
+                session.disconnect(disconnectMessage);
+                return false;
+            } else if (protocolVersion < GameProtocol.DEFAULT_BEDROCK_PROTOCOL) {
+                session.getUpstream().getSession().setCodec(BedrockCompat.disconnectCompat(protocolVersion));
+
+                session.disconnect(GeyserLocale.getLocaleStringLog("geyser.network.outdated.client", supportedVersions));
+                return false;
+            } else {
+                throw new IllegalStateException("Default codec of protocol version " + protocolVersion + " should have been found");
+            }
+        }
+
+        session.getUpstream().getSession().setCodec(packetCodec);
+        return true;
+    }
+
+    @Override
+    public void onDisconnect(CharSequence reason) {
+        if (BedrockDisconnectReasons.CLOSED.contentEquals(reason)) {
+            this.session.getUpstream().getSession().setDisconnectReason(GeyserLocale.getLocaleStringLog("geyser.network.disconnect.closed_by_remote_peer"));
+        } else if (BedrockDisconnectReasons.TIMEOUT.contentEquals(reason)) {
+            this.session.getUpstream().getSession().setDisconnectReason(GeyserLocale.getLocaleStringLog("geyser.network.disconnect.timed_out"));
+        }
+        this.session.disconnect(this.session.getUpstream().getSession().getDisconnectReason().toString());
+    }
+
+    @Override
+    public PacketSignal handle(RequestNetworkSettingsPacket packet) {
+        if (!setCorrectCodec(packet.getProtocolVersion())) {
+            return PacketSignal.HANDLED;
+        }
+
+        PacketCompressionAlgorithm algorithm = PacketCompressionAlgorithm.ZLIB;
+
+        NetworkSettingsPacket responsePacket = new NetworkSettingsPacket();
+        responsePacket.setCompressionAlgorithm(algorithm);
+        responsePacket.setCompressionThreshold(512);
+        session.sendUpstreamPacketImmediately(responsePacket);
+        session.getUpstream().getSession().getPeer().setCompression(compressionStrategy);
+
+        networkSettingsRequested = true;
+        return PacketSignal.HANDLED;
+    }
+
+    @Override
+    public PacketSignal handle(LoginPacket loginPacket) {
+        if (geyser.isShuttingDown() || geyser.isReloading()) {
+            session.disconnect(GeyserLocale.getLocaleStringLog("geyser.core.shutdown.kick.message"));
+            return PacketSignal.HANDLED;
+        }
+
+        if (!networkSettingsRequested) {
+            session.disconnect(GeyserLocale.getLocaleStringLog("geyser.network.outdated.client", GameProtocol.getAllSupportedBedrockVersions()));
+            return PacketSignal.HANDLED;
+        }
+
+        if (receivedLoginPacket) {
+            session.disconnect("Received duplicate login packet!");
+            session.forciblyCloseUpstream();
+            return PacketSignal.HANDLED;
+        }
+        receivedLoginPacket = true;
+
+        LoginEncryptionUtils.encryptPlayerConnection(session, loginPacket);
+
+        if (session.isClosed()) {
+            session.forciblyCloseUpstream();
+            return PacketSignal.HANDLED;
+        }
+
+        if (geyser.getSessionManager().isXuidAlreadyPending(session.xuid()) || geyser.getSessionManager().sessionByXuid(session.xuid()) != null) {
+            session.disconnect(GeyserLocale.getLocaleStringLog("geyser.auth.already_loggedin", session.bedrockUsername()));
+            return PacketSignal.HANDLED;
+        }
+
+        session.setBlockMappings(BlockRegistries.BLOCKS.forVersion(loginPacket.getProtocolVersion()));
+        session.setItemMappings(Registries.ITEMS.forVersion(loginPacket.getProtocolVersion()));
+
+        geyser.getSessionManager().addPendingSession(session);
+
+        geyser.eventBus().fire(new SessionInitializeEvent(session));
+
+        PlayStatusPacket playStatus = new PlayStatusPacket();
+        playStatus.setStatus(PlayStatusPacket.Status.LOGIN_SUCCESS);
+        session.sendUpstreamPacket(playStatus);
+
+        this.resourcePackLoadEvent = new SessionLoadResourcePacksEventImpl(session);
+        this.geyser.eventBus().fireEventElseKick(this.resourcePackLoadEvent, session);
+        if (session.isClosed()) {
+            return PacketSignal.HANDLED;
+        }
+        session.integratedPackActive(resourcePackLoadEvent.isIntegratedPackActive());
+
+        ResourcePacksInfoPacket resourcePacksInfo = new ResourcePacksInfoPacket();
+        resourcePacksInfo.getResourcePackInfos().addAll(this.resourcePackLoadEvent.infoPacketEntries());
+        resourcePacksInfo.setVibrantVisualsForceDisabled(!session.isAllowVibrantVisuals());
+
+        resourcePacksInfo.setForcedToAccept(GeyserImpl.getInstance().config().gameplay().forceResourcePacks() ||
+            resourcePackLoadEvent.isIntegratedPackActive());
+        resourcePacksInfo.setWorldTemplateId(UUID.randomUUID());
+        resourcePacksInfo.setWorldTemplateVersion("*");
+
+        session.sendUpstreamPacket(resourcePacksInfo);
+
+        GeyserLocale.loadGeyserLocale(session.locale());
+        return PacketSignal.HANDLED;
+    }
+
+    @Override
+    public PacketSignal handle(ResourcePackClientResponsePacket packet) {
+        if (session.getUpstream().isClosed() || session.isClosed()) {
+            return PacketSignal.HANDLED;
+        }
+
+        if (finishedResourcePackSending) {
+            session.disconnect("Illegal duplicate resource pack response packet received!");
+            return PacketSignal.HANDLED;
+        }
+
+        switch (packet.getStatus()) {
+            case COMPLETED -> {
+                finishedResourcePackSending = true;
+                if (geyser.config().java().authType() != AuthType.ONLINE) {
+                    session.authenticate(session.getAuthData().name());
+                } else if (!couldLoginUserByName(session.getAuthData().name())) {
+                    session.connect();
+                }
+                geyser.getLogger().info(GeyserLocale.getLocaleStringLog("geyser.network.connect", session.getAuthData().name() +
+                    " (" + session.protocolVersion() + ")"));
+            }
+            case SEND_PACKS -> {
+                if (!packet.getPackIds().isEmpty()) {
+                    packsToSend.addAll(packet.getPackIds());
+                    sendPackDataInfo(packsToSend.pop());
+                    return PacketSignal.HANDLED;
+                }
+            }
+            case HAVE_ALL_PACKS -> {
+                ResourcePackStackPacket stackPacket = new ResourcePackStackPacket();
+                stackPacket.setExperimentsPreviouslyToggled(false);
+                stackPacket.setForcedToAccept(false);
+                stackPacket.setGameVersion(session.getClientData().getGameVersion());
+                stackPacket.getResourcePacks().addAll(this.resourcePackLoadEvent.orderedPacks());
+
+                session.sendUpstreamPacket(stackPacket);
+            }
+            case REFUSED -> session.disconnect("disconnectionScreen.resourcePack");
+            default -> {
+                GeyserImpl.getInstance().getLogger().debug("received unknown status packet: " + packet);
+                session.disconnect("disconnectionScreen.resourcePack");
+            }
+        }
+
+        return PacketSignal.HANDLED;
+    }
+
+    @Override
+    public PacketSignal handle(ModalFormResponsePacket packet) {
+        if (session.getUpstream().isClosed() || session.isClosed()) {
+            return PacketSignal.HANDLED;
+        }
+        session.executeInEventLoop(() -> session.getFormCache().handleResponse(packet));
+        return PacketSignal.HANDLED;
+    }
+
+    private boolean couldLoginUserByName(String bedrockUsername) {
+        if (geyser.config().savedUserLogins().contains(bedrockUsername)) {
+            String authChain = geyser.authChainFor(bedrockUsername);
+            if (authChain != null) {
+                geyser.getLogger().info(GeyserLocale.getLocaleStringLog("geyser.auth.stored_credentials", session.getAuthData().name()));
+                session.authenticateWithAuthChain(authChain);
+                return true;
+            }
+        }
+        PendingMicrosoftAuthentication.AuthenticationTask task = geyser.getPendingMicrosoftAuthentication().getTask(session.getAuthData().xuid());
+        if (task != null) {
+            return task.getAuthentication().isDone() && session.onMicrosoftLoginComplete(task);
+        }
+
+        return false;
+    }
+
+    @Override
+    public PacketSignal handle(PlayerAuthInputPacket packet) {
+        if (!session.isClosed() && session.isLoggingIn() && !packet.getMotion().equals(Vector2f.ZERO)) {
+            SetTitlePacket titlePacket = new SetTitlePacket();
+            titlePacket.setType(SetTitlePacket.Type.ACTIONBAR);
+            titlePacket.setText(GeyserLocale.getPlayerLocaleString("geyser.auth.login.wait", session.locale()));
+            titlePacket.setXuid("");
+            titlePacket.setPlatformOnlineId("");
+            session.sendUpstreamPacket(titlePacket);
+        }
+
+        return translateAndDefault(packet);
+    }
+
+    @Override
+    public PacketSignal handle(ResourcePackChunkRequestPacket packet) {
+        if (session.getUpstream().isClosed() || session.isClosed()) {
+            return PacketSignal.HANDLED;
+        }
+
+        chunkRequestQueue.add(packet);
+        if (!currentlySendingChunks) {
+            currentlySendingChunks = true;
+            processNextChunk();
+        }
+        return PacketSignal.HANDLED;
+    }
+
+    public void processNextChunk() {
+        ResourcePackChunkRequestPacket packet = chunkRequestQueue.poll();
+        if (packet == null || session.isClosed()) {
+            currentlySendingChunks = false;
+            return;
+        }
+
+        ResourcePackHolder holder = this.resourcePackLoadEvent.getPacks().get(packet.getPackId());
+        if (holder == null) {
+            GeyserImpl.getInstance().getLogger().debug("Client %s tried to request pack id %s not sent to it!",
+                session.bedrockUsername(), packet.getPackId());
+            chunkRequestQueue.clear();
+            session.disconnect("disconnectionScreen.resourcePack");
+            return;
+        }
+
+        PackCodec codec = holder.codec();
+        if (codec instanceof GeyserUrlPackCodec urlPackCodec) {
+            ResourcePackLoader.testRemotePack(session, urlPackCodec, holder);
+            if (!resourcePackLoadEvent.value(holder.uuid(), ResourcePackOption.Type.FALLBACK, true)) {
+                session.disconnect("Unable to provide downloaded resource pack. Contact an administrator!");
+                chunkRequestQueue.clear();
+                return;
+            }
+        } else if (finishedResourcePackSending) {
+            GeyserImpl.getInstance().getLogger().warning("Received resource pack chunk packet after stage completed! " + packet);
+            session.disconnect("Duplicate resource pack packet received!");
+            chunkRequestQueue.clear();
+            return;
+        }
+
+        ResourcePackChunkDataPacket data = new ResourcePackChunkDataPacket();
+        data.setChunkIndex(packet.getChunkIndex());
+        data.setProgress((long) packet.getChunkIndex() * GeyserResourcePack.CHUNK_SIZE);
+        data.setPackVersion(packet.getPackVersion());
+        data.setPackId(packet.getPackId());
+
+        int offset = packet.getChunkIndex() * GeyserResourcePack.CHUNK_SIZE;
+        long remainingSize = codec.size() - offset;
+        byte[] packData = new byte[(int) MathUtils.constrain(remainingSize, 0, GeyserResourcePack.CHUNK_SIZE)];
+
+        try (SeekableByteChannel channel = codec.serialize()) {
+            channel.position(offset);
+            channel.read(ByteBuffer.wrap(packData, 0, packData.length));
+        } catch (IOException e) {
+            session.disconnect("disconnectionScreen.resourcePack");
+            e.printStackTrace();
+        }
+
+        data.setData(Unpooled.wrappedBuffer(packData));
+
+        session.sendUpstreamPacketImmediately(data);
+        session.scheduleInEventLoop(this::processNextChunk, PACKET_SEND_DELAY, TimeUnit.MILLISECONDS);
+
+        if (remainingSize <= GeyserResourcePack.CHUNK_SIZE && !packsToSend.isEmpty()) {
+            sendPackDataInfo(packsToSend.pop());
+        }
+    }
+
+    protected void sendPackDataInfo(String id) {
+        ResourcePackDataInfoPacket data = new ResourcePackDataInfoPacket();
+        String[] packID = id.split("_");
+
+        if (packID.length < 2) {
+            GeyserImpl.getInstance().getLogger().debug("Client %s tried to request invalid pack id %s!",
+                session.bedrockUsername(), Arrays.toString(packID));
+            session.disconnect("disconnectionScreen.resourcePack");
+            return;
+        }
+
+        UUID packId;
+        try {
+            packId = UUID.fromString(packID[0]);
+        } catch (IllegalArgumentException e) {
+            GeyserImpl.getInstance().getLogger().debug("Client %s tried to request pack with an invalid id %s)",
+                session.bedrockUsername(), id);
+            session.disconnect("disconnectionScreen.resourcePack");
+            return;
+        }
+
+        ResourcePackHolder holder = this.resourcePackLoadEvent.getPacks().get(packId);
+        if (holder == null) {
+            GeyserImpl.getInstance().getLogger().debug("Client %s tried to request pack id %s not sent to it!",
+                session.bedrockUsername(), id);
+            session.disconnect("disconnectionScreen.resourcePack");
+            return;
+        }
+
+        ResourcePack pack = holder.pack();
+        PackCodec codec = pack.codec();
+        ResourcePackManifest.Header header = pack.manifest().header();
+
+        data.setPackId(header.uuid());
+        int chunkCount = (int) Math.ceil(codec.size() / (double) GeyserResourcePack.CHUNK_SIZE);
+        data.setChunkCount(chunkCount);
+        data.setCompressedPackSize(codec.size());
+        data.setMaxChunkSize(GeyserResourcePack.CHUNK_SIZE);
+        data.setHash(codec.sha256());
+        data.setPackVersion(packID[1]);
+        data.setPremium(false);
+        data.setType(ResourcePackType.RESOURCES);
+
+        session.sendUpstreamPacket(data);
+    }
+}
