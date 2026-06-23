@@ -6,6 +6,7 @@
 package nc.geyserext.netease.initializer;
 
 import nc.geyserext.netease.handler.NetEaseUpstreamHandler;
+import nc.geyserext.netease.handler.UpstreamHandlerBase;
 import io.netty.channel.*;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import org.checkerframework.checker.nullness.qual.NonNull;
@@ -55,7 +56,12 @@ public class NeteaseServerInitializer extends BedrockServerInitializer {
                     c.pipeline().addAfter(BedrockPacketCodec.NAME, InvalidPacketHandler.NAME, new InvalidPacketHandler(session));
                 } catch (Exception ignored) {}
             }
-            srv.setPacketHandler(new NetEaseUpstreamHandler(geyser, session));
+            int rakVer = srv.getPeer().getChannel().config().getOption(RakChannelOption.RAK_PROTOCOL_VERSION);
+            if (rakVer == NETEASE_RAKNET) {
+                srv.setPacketHandler(new NetEaseUpstreamHandler(geyser, session));
+            } else {
+                srv.setPacketHandler(new UpstreamHandlerBase(geyser, session));
+            }
         } catch (Throwable e) { geyser.getLogger().error("Error initializing player!", e); srv.disconnect(e.getMessage()); }
     }
 

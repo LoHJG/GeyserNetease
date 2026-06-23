@@ -104,7 +104,10 @@ public class NetEaseUpstreamHandler extends UpstreamHandlerBase {
         } catch (Exception e) { session.disconnect("disconnectionScreen.internalError.cantConnect"); NeteaseExtension.LOG.error("NetEase auth failed", e); return PacketSignal.HANDLED; }
 
         int spoofedVersion = GameProtocol.DEFAULT_BEDROCK_PROTOCOL;
-        var blockMappings = BlockRegistries.BLOCKS.forVersion(spoofedVersion);
+        var shared = BlockRegistries.BLOCKS.forVersion(spoofedVersion);
+        var blockMappings = shared;
+        try { blockMappings = nc.geyserext.netease.session.SpoofedUpstream.cloneBlockMappings(shared); }
+        catch (Throwable e) { NeteaseExtension.LOG.error("BlockMappings clone failed, using shared: " + e.getMessage()); }
         session.setBlockMappings(blockMappings);
         session.setItemMappings(Registries.ITEMS.forVersion(spoofedVersion));
 

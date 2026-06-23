@@ -1,9 +1,3 @@
-# Authentication mode for NetEase clients.
-# - "auto":   Automatically detect and authenticate NetEase clients (recommended).
-# - "online": Require valid NetEase certificate chains. Clients with invalid certs are rejected.
-# - "offline": Accept all NetEase clients without certificate verification (useful for LAN/testing).
-auth-mode: "auto"
-
 # When set to true, only NetEase clients (RakNet protocol version 8) are allowed to join.
 # Standard Bedrock Edition clients will be rejected with a disconnect message.
 # When false (default), both NetEase and standard Bedrock clients can connect.

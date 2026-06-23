@@ -109,4 +109,19 @@ public class SpoofedUpstream extends UpstreamSession {
             return true;
         } catch (Throwable e) { return false; }
     }
+
+    public static BlockMappings cloneBlockMappings(BlockMappings orig) throws Throwable {
+        BlockMappings copy = (BlockMappings) U.allocateInstance(BlockMappings.class);
+        for (Field f : BlockMappings.class.getDeclaredFields()) {
+            long off = U.objectFieldOffset(f);
+            U.putObject(copy, off, U.getObject(orig, off));
+        }
+        for (String name : new String[]{"javaToBedrockBlocks", "bedrockRuntimeMap", "javaToVanillaBedrockBlocks"}) {
+            Field f = BlockMappings.class.getDeclaredField(name);
+            long off = U.objectFieldOffset(f);
+            Object[] arr = (Object[]) U.getObject(orig, off);
+            if (arr != null) U.putObject(copy, off, arr.clone());
+        }
+        return copy;
+    }
 }
