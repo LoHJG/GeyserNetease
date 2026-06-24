@@ -23,10 +23,11 @@ public class NeteaseServerInitializer extends BedrockServerInitializer {
     private static final int NETEASE_RAKNET = 8;
     private final GeyserImpl geyser;
     private final boolean rakCookie;
+    private final boolean onlyNeteaseClients;
     private final DefaultEventLoopGroup elg = new DefaultEventLoopGroup(0, new DefaultThreadFactory("Geyser player thread"));
 
-    public NeteaseServerInitializer(GeyserImpl geyser, boolean rakCookie) {
-        this.geyser = geyser; this.rakCookie = rakCookie;
+    public NeteaseServerInitializer(GeyserImpl geyser, boolean rakCookie, boolean onlyNeteaseClients) {
+        this.geyser = geyser; this.rakCookie = rakCookie; this.onlyNeteaseClients = onlyNeteaseClients;
     }
     public DefaultEventLoopGroup eventLoopGroup() { return elg; }
 
@@ -60,6 +61,10 @@ public class NeteaseServerInitializer extends BedrockServerInitializer {
             if (rakVer == NETEASE_RAKNET) {
                 srv.setPacketHandler(new NetEaseUpstreamHandler(geyser, session));
             } else {
+                if (onlyNeteaseClients) {
+                    session.disconnect("This server only accepts NetEase clients.");
+                    return;
+                }
                 srv.setPacketHandler(new UpstreamHandlerBase(geyser, session));
             }
         } catch (Throwable e) { geyser.getLogger().error("Error initializing player!", e); srv.disconnect(e.getMessage()); }

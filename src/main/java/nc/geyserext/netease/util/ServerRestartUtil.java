@@ -27,7 +27,7 @@ public final class ServerRestartUtil {
     private static final TransportHelper.TransportType TRANSPORT = TransportHelper.TRANSPORT_TYPE;
     private ServerRestartUtil() {}
 
-    public static void restart() throws Exception {
+    public static void restart(boolean onlyNeteaseClients) throws Exception {
         GeyserImpl geyser = GeyserImpl.getInstance();
         geyser.getGeyserServer().shutdown();
 
@@ -40,7 +40,7 @@ public final class ServerRestartUtil {
         GeyserConfig cfg = geyser.config();
         boolean rakCookie = Boolean.parseBoolean(System.getProperty("Geyser.RakSendCookie", "true"));
 
-        NeteaseServerInitializer init = new NeteaseServerInitializer(geyser, rakCookie);
+        NeteaseServerInitializer init = new NeteaseServerInitializer(geyser, rakCookie, onlyNeteaseClients);
 
         ServerBootstrap bs = new ServerBootstrap()
             .channelFactory(RakChannelFactory.server(TRANSPORT.datagramChannelClass()))

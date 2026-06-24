@@ -24,7 +24,7 @@ public class NeteaseExtension implements Extension {
         CONFIG = NeteaseConfigLoader.load(this, NeteaseExtension.class);
 
         try {
-            ServerRestartUtil.restart();
+            ServerRestartUtil.restart(CONFIG.onlyNeteaseClients());
             LOG.info("NetEase Extension initialized — RakNet v8 clients supported.");
         } catch (Exception e) { LOG.error("Init failed", e); }
     }
