@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="GeyserNetease — 让网易版 Minecraft 玩家接入你的 Geyser 服务器。">
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <title>GeyserNetease</title>
+    <style>
+        @font-face {
+            font-family: 'Unifont';
+            src: url('font/unifont.otf') format('opentype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --text:      #1d1d1f;
+            --secondary: #6e6e73;
+            --tertiary:  #aeaeb2;
+            --accent:    #0071e3;
+            --border:    #d2d2d7;
+            --surface:   #ffffff;
+            --bg:        #f5f5f7;
+            --dark:      #1d1d1f;
+        }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: 'Unifont', -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .wrap { max-width: 960px; margin: 0 auto; padding: 0 40px; }
+
+        /* ---- Nav ---- */
+        nav {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+            background: rgba(29,29,31,.82);
+            backdrop-filter: blur(28px) saturate(180%);
+            -webkit-backdrop-filter: blur(28px) saturate(180%);
+            border-bottom: 1px solid rgba(255,255,255,.08);
+        }
+        nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 52px; }
+        .nav-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+        .nav-brand img { width: 30px; height: 30px; border-radius: 7px; }
+        .nav-brand span { font-weight: 620; font-size: 16px; color: #fff; letter-spacing: -.2px; }
+        .nav-gh { font-size: 14px; color: #6ea8f7; text-decoration: none; font-weight: 520; }
+
+        /* ---- Hero ---- */
+        .hero {
+            padding: 160px 0 100px; text-align: center;
+            background: var(--dark);
+            color: #fff;
+        }
+        .hero-icon {
+            width: 96px; height: 96px; border-radius: 24px; margin-bottom: 36px;
+            box-shadow: 0 0 0 1px rgba(255,255,255,.1), 0 16px 48px rgba(0,0,0,.4);
+        }
+        .hero h1 {
+            font-size: 56px; font-weight: 720; letter-spacing: -1.2px;
+            color: #fff; margin-bottom: 18px; line-height: 1.1;
+        }
+        .hero .sub {
+            font-size: 19px; color: #a1a1a6; max-width: 520px; margin: 0 auto 44px;
+            line-height: 1.6;
+        }
+        .hero .btns { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 14px 32px; border-radius: 24px; font-size: 15px; font-weight: 600;
+            text-decoration: none; cursor: pointer; border: none; font-family: inherit;
+            letter-spacing: -.1px;
+        }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: #1a80f2; }
+        .btn-soft { background: rgba(255,255,255,.12); color: #fff; }
+        .btn-soft:hover { background: rgba(255,255,255,.18); }
+
+        /* ---- Sections ---- */
+        section { padding: 110px 0; }
+        section.alt { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+        section.dark { background: var(--dark); color: #fff; border: none; }
+        section.dark h2 { color: #fff; }
+        section.dark .lead { color: #a1a1a6; }
+        section.dark .card { background: #2a2a2d; border-color: #3a3a3d; }
+        section.dark .card h3 { color: #fff; }
+        section.dark .card p { color: #a1a1a6; }
+        .sec-label { font-size: 12px; font-weight: 680; text-transform: uppercase; letter-spacing: .8px; color: var(--accent); margin-bottom: 10px; }
+        section.dark .sec-label { color: #6ea8f7; }
+        section h2 { font-size: 38px; font-weight: 720; letter-spacing: -.6px; color: var(--text); margin-bottom: 16px; line-height: 1.2; }
+        section .lead { font-size: 17px; color: var(--secondary); margin-bottom: 56px; max-width: 580px; line-height: 1.65; }
+
+        /* ---- Grid ---- */
+        .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        .card {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 18px; padding: 32px 28px;
+            box-shadow: 0 2px 8px rgba(0,0,0,.06);
+        }
+        .card-top { border-top: 3px solid var(--accent); }
+        .card .icon-slot {
+            width: 46px; height: 46px; border-radius: 14px; margin-bottom: 22px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .card .icon-slot svg { width: 22px; height: 22px; }
+        .card h3 { font-size: 17px; font-weight: 650; color: var(--text); margin-bottom: 8px; letter-spacing: -.2px; }
+        .card p { font-size: 14px; color: var(--secondary); line-height: 1.6; }
+
+        /* ---- Badges ---- */
+        .badges { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 36px; }
+        .badge {
+            padding: 8px 20px; border-radius: 22px;
+            font-size: 13px; font-weight: 620;
+            background: rgba(0,113,227,.08); color: var(--accent);
+            border: 1px solid rgba(0,113,227,.14);
+        }
+        section.dark .badge { background: rgba(110,168,247,.1); color: #6ea8f7; border-color: rgba(110,168,247,.18); }
+
+        /* ---- Config ---- */
+        .config-box {
+            background: #fafafc; border: 1px solid var(--border);
+            border-radius: 16px; overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,.06);
+        }
+        .config-box .bar {
+            display: flex; align-items: center; gap: 8px; padding: 14px 24px;
+            background: #f6f6f9; border-bottom: 1px solid var(--border);
+        }
+        .config-box .bar .dot { width: 11px; height: 11px; border-radius: 50%; }
+        .dot-r { background: #ff5f57; }
+        .dot-y { background: #febc2e; }
+        .dot-g { background: #28c840; }
+        .config-box pre {
+            margin: 0; padding: 28px 32px;
+            font-family: "SF Mono", "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+            font-size: 13px; color: var(--text); line-height: 1.9; overflow-x: auto;
+        }
+        .hl { color: var(--accent); }
+
+        /* ---- Steps ---- */
+        .steps { display: flex; flex-direction: column; gap: 18px; }
+        .step {
+            display: flex; gap: 24px; align-items: flex-start;
+            padding: 26px 32px; border-radius: 16px;
+            background: var(--surface); border: 1px solid var(--border);
+            box-shadow: 0 2px 8px rgba(0,0,0,.05);
+        }
+        .step-num {
+            width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
+            background: var(--accent); color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 17px;
+        }
+        .step-body h3 { font-size: 18px; font-weight: 640; color: var(--text); margin-bottom: 4px; }
+        .step-body p { font-size: 14px; color: var(--secondary); line-height: 1.55; }
+
+        /* ---- Reveal ---- */
+        .reveal {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity .6s ease, transform .6s ease;
+        }
+        .reveal.visible { opacity: 1; transform: translateY(0); }
+
+        /* ---- Video ---- */
+        .video-wrap {
+            position: relative; width: 100%; max-width: 800px; margin: 44px auto 0;
+            border-radius: 16px; overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0,0,0,.15);
+        }
+        .video-wrap::before {
+            content: ''; display: block; padding-top: 56.25%;
+        }
+        .video-wrap iframe {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        }
+
+        /* ---- Footer ---- */
+        footer { padding: 48px 0; text-align: center; border-top: 1px solid var(--border); background: var(--surface); }
+        footer p { font-size: 13px; color: var(--tertiary); }
+        footer a { color: var(--accent); text-decoration: none; font-weight: 550; }
+
+        @media (max-width: 760px) {
+            .grid3 { grid-template-columns: 1fr; gap: 16px; }
+            .hero h1 { font-size: 36px; }
+            .hero .sub { font-size: 16px; }
+            section h2 { font-size: 28px; }
+            section { padding: 72px 0; }
+            section .lead { margin-bottom: 40px; }
+            .wrap { padding: 0 22px; }
+            .card { padding: 26px 22px; }
+            .hero-icon { width: 80px; height: 80px; border-radius: 20px; }
+            .hero { padding: 140px 0 80px; }
+        }
+    </style>
+</head>
+<body>
+
+<nav id="navbar">
+    <div class="wrap">
+        <a href="#" class="nav-brand">
+            <img src="img/icon.png" alt="">
+            <span>GeyserNetease</span>
+        </a>
+        <a href="https://github.com/LoHJG/GeyserNetease" class="nav-gh" target="_blank" rel="noopener">GitHub</a>
+    </div>
+</nav>
+
+<header class="hero">
+    <div class="wrap">
+        <img class="hero-icon" src="img/icon.png" alt="">
+        <h1>GeyserNetease</h1>
+        <p class="sub">
+            让网易版 Minecraft 玩家也能进入你的服务器，与国际版、Java 版玩家同服游玩。
+        </p>
+        <div class="btns">
+            <a href="https://github.com/LoHJG/GeyserNetease" class="btn btn-primary" target="_blank" rel="noopener">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                查看 GitHub
+            </a>
+            <a href="#config" class="btn btn-soft">配置说明</a>
+        </div>
+    </div>
+</header>
+
+<section>
+    <div class="wrap">
+        <div class="sec-label">Overview</div>
+        <h2 class="reveal">为什么需要它</h2>
+        <p class="lead reveal">
+            网易版 Minecraft 虽然基于基岩版，但协议、验证体系和数据包结构与国际版不同。原生 Geyser 无法接受网易客户端接入。
+        </p>
+        <div class="grid3">
+            <div class="card card-top reveal" style="border-top-color: var(--accent);">
+                <div class="icon-slot" style="background:rgba(0,113,227,.08);color:var(--accent);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 21h6"/><path d="M12 4v17"/></svg>
+                </div>
+                <h3>多协议版本</h3>
+                <p>支持 v630、v686、v766、v819 四个网易协议版本，各自拥有独立的序列化器实现。</p>
+            </div>
+            <div class="card card-top reveal" style="border-top-color: #34c759;">
+                <div class="icon-slot" style="background:rgba(52,199,89,.08);color:#34c759;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                </div>
+                <h3>不影响国际版</h3>
+                <p>国际版玩家走标准 Geyser 处理链路，网易逻辑仅在检测到 RakNet v8 客户端时激活，互不干扰。</p>
+            </div>
+            <div class="card card-top reveal" style="border-top-color: #ff9500;">
+                <div class="icon-slot" style="background:rgba(255,149,0,.08);color:#ff9500;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                </div>
+                <h3>证书验证</h3>
+                <p>支持网易 RSA-2048/SHA-256 证书链校验，独立于 Xbox Live 验证体系完成加密握手。</p>
+            </div>
+            <div class="card card-top reveal" style="border-top-color: #af52de;">
+                <div class="icon-slot" style="background:rgba(175,82,222,.08);color:#af52de;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                </div>
+                <h3>方块哈希映射</h3>
+                <p>将原版方块运行时 ID 映射为网易 FNV-1a 哈希值，在 StartGame、LevelChunk、UpdateBlock 中自动替换。</p>
+            </div>
+            <div class="card card-top reveal" style="border-top-color: #00c7be;">
+                <div class="icon-slot" style="background:rgba(0,199,190,.08);color:#00c7be;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                </div>
+                <h3>RakNet 路由</h3>
+                <p>在 channel 层面通过 RakNet 协议版本号识别网易客户端，自动切换压缩策略和 PacketCodec。</p>
+            </div>
+            <div class="card card-top reveal" style="border-top-color: #ff3b30;">
+                <div class="icon-slot" style="background:rgba(255,59,48,.08);color:#ff3b30;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                </div>
+                <h3>客户端过滤</h3>
+                <p>可选仅允许网易客户端模式，拒绝国际版基岩玩家连接，适合纯网易服务器部署。</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="dark">
+    <div class="wrap">
+        <div class="sec-label">Demo</div>
+        <h2 class="reveal">教程</h2>
+        <p class="lead reveal">
+            如何安装GeyserNetease。
+        </p>
+        <div class="video-wrap reveal">
+            <iframe src="//player.bilibili.com/player.html?isOutside=true&aid=116803783168365&bvid=BV1xqjd6VEXb&cid=39362954287&p=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
+        </div>
+    </div>
+</section>
+
+<section id="config">
+    <div class="wrap">
+        <div class="sec-label">Configuration</div>
+        <h2 class="reveal">配置</h2>
+        <p class="lead reveal">
+            将 <code style="background:#1a1a1d;padding:3px 9px;border-radius:6px;font-size:14px;color:#fff;">GeyserNeteaseExtension.jar</code> 放入 Geyser 的 <code style="background:#1a1a1d;padding:3px 9px;border-radius:6px;font-size:14px;color:#fff;">extensions/</code> 目录，重启即可。首次启动后自动生成配置文件。
+        </p>
+        <div class="config-box reveal" style="background:#2a2a2d; border-color:#3a3a3d; box-shadow: 0 2px 12px rgba(0,0,0,.3);">
+            <div class="bar" style="background:#252528; border-bottom-color:#3a3a3d;">
+                <span class="dot dot-r"></span>
+                <span class="dot dot-y"></span>
+                <span class="dot dot-g"></span>
+                <span style="margin-left:8px;font-size:12px;color:#86868b;">extensions/geyser-netease/config.yml</span>
+            </div>
+            <pre style="background:#2a2a2d; color:#e0e0e0;"><span class="hl" style="color:#6ea8f7;"># true = 仅允许网易版（RakNet v8）客户端连接，国际版玩家将被断开</span>
+only-netease-clients: false
+
+<span class="hl" style="color:#6ea8f7;"># true = 输出详细身份验证及数据包调试日志</span>
+debug-mode: false</pre>
+        </div>
+
+        <div class="badges reveal">
+            <span class="badge">v630</span>
+            <span class="badge">v686</span>
+            <span class="badge">v766</span>
+            <span class="badge">v819</span>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="wrap">
+        <div class="sec-label">Get Started</div>
+        <h2 class="reveal">开始使用</h2>
+        <p class="lead reveal">
+            你需要已经安装并运行 Geyser。本扩展不能独立使用。
+        </p>
+        <div class="steps">
+            <div class="step reveal">
+                <div class="step-num">1</div>
+                <div class="step-body">
+                    <h3>下载</h3>
+                    <p>从 <a href="https://github.com/LoHJG/GeyserNetease/releases" target="_blank" rel="noopener" style="color:var(--accent);">GitHub Releases</a> 获取最新版本的 jar 文件。</p>
+                </div>
+            </div>
+            <div class="step reveal">
+                <div class="step-num">2</div>
+                <div class="step-body">
+                    <h3>安装</h3>
+                    <p>将 jar 放入 Geyser 的 extensions 目录，重启 Geyser。</p>
+                </div>
+            </div>
+            <div class="step reveal">
+                <div class="step-num">3</div>
+                <div class="step-body">
+                    <h3>构建（可选）</h3>
+                    <p>如需自行编译：<code style="background:rgba(0,113,227,.07);padding:3px 9px;border-radius:6px;font-size:13px;">./gradlew build</code>，产物位于 <code style="background:rgba(0,113,227,.07);padding:3px 9px;border-radius:6px;font-size:13px;">build/libs/GeyserNeteaseExtension.jar</code>。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<footer>
+    <div class="wrap">
+        <p>
+            GeyserNetease &middot;
+            <a href="https://github.com/LoHJG/GeyserNetease" target="_blank" rel="noopener">GitHub</a> &middot;
+            MIT License
+        </p>
+    </div>
+</footer>
+
+<script>
+    const observer = new IntersectionObserver(entries => {
+        entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+    }, { threshold: 0.08 });
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+</script>
+
+</body>
+</html>
