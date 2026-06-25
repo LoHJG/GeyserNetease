@@ -16,6 +16,8 @@ public final class BlockHashUtils {
     public static int fnv1a32Nbt(NbtMap tag) {
         try (var baos = new ByteArrayOutputStream(); var w = NbtUtils.createWriterLE(baos)) {
             String name = tag.getString("name", "minecraft:unknown");
+            if (name.equals("minecraft:unknown")) return -2;
+
             NbtMap states = tag.getCompound("states");
 
             java.util.TreeMap<String, Object> sorted = new java.util.TreeMap<>();

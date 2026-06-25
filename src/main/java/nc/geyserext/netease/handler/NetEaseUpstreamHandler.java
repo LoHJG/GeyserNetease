@@ -8,10 +8,14 @@ package nc.geyserext.netease.handler;
 import nc.geyserext.netease.NeteaseExtension;
 import nc.geyserext.netease.session.NeteaseSession;
 import nc.geyserext.netease.util.protocol.NeteaseCodecRegistry;
+import org.cloudburstmc.math.vector.Vector3i;
 import org.cloudburstmc.netty.channel.raknet.config.RakChannelOption;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
 import org.cloudburstmc.protocol.bedrock.data.PacketCompressionAlgorithm;
 import org.cloudburstmc.protocol.bedrock.data.auth.CertificateChainPayload;
+import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.InventoryActionData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.InventorySource;
+import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.InventoryTransactionType;
 import org.cloudburstmc.protocol.bedrock.netty.codec.compression.*;
 import org.cloudburstmc.protocol.bedrock.packet.*;
 import org.cloudburstmc.protocol.bedrock.util.*;
@@ -26,6 +30,9 @@ import org.geysermc.geyser.session.GeyserSession;
 import org.geysermc.geyser.api.network.AuthType;
 import org.geysermc.geyser.session.auth.*;
 import org.geysermc.geyser.text.GeyserLocale;
+import org.geysermc.mcprotocollib.protocol.data.game.entity.object.Direction;
+import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PlayerAction;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundPlayerActionPacket;
 
 import javax.crypto.SecretKey;
 import java.security.KeyPair;
@@ -220,6 +227,33 @@ public class NetEaseUpstreamHandler extends UpstreamHandlerBase {
     public PacketSignal handle(PyRpcPacket p)         { return PacketSignal.HANDLED; }
     public PacketSignal handle(StoreBuySuccessPacket p) { return PacketSignal.HANDLED; }
     public PacketSignal handle(ConfirmSkinPacket p)   { return PacketSignal.HANDLED; }
+
+    public PacketSignal handle(InventoryTransactionPacket packet) {
+        if (neteaseSession != null && packet.getTransactionType() == InventoryTransactionType.NORMAL
+                && packet.getActions().size() == 2) {
+            List<InventoryActionData> actions = packet.getActions();
+            InventoryActionData action0 = actions.get(0);
+            InventoryActionData action1 = actions.get(1);
+            InventoryActionData worldAction = action0.getSource().getType() == InventorySource.Type.WORLD_INTERACTION ? action0 : action1;
+            InventoryActionData containerAction = (worldAction == action0) ? action1 : action0;
+            if (worldAction.getSource().getType() != InventorySource.Type.WORLD_INTERACTION
+                    || containerAction.getSource().getType() != InventorySource.Type.CONTAINER)
+                return defaultHandler(packet);
+
+            boolean dropAll = worldAction.getToItem().getCount() > 1;
+            var inventory = session.getPlayerInventory();
+            if (inventory.getItemInHand().isEmpty()) return PacketSignal.HANDLED;
+
+            session.sendDownstreamGamePacket(new ServerboundPlayerActionPacket(
+                dropAll ? PlayerAction.DROP_ITEM_STACK : PlayerAction.DROP_ITEM, Vector3i.ZERO, Direction.DOWN, 0));
+
+            if (dropAll) inventory.setItemInHand(org.geysermc.geyser.inventory.GeyserItemStack.EMPTY);
+            else inventory.getItemInHand().sub(1);
+
+            return PacketSignal.HANDLED;
+        }
+        return defaultHandler(packet);
+    }
 
     private static void startEncryptionHandshake(GeyserSession session, PublicKey clientKey) throws Exception {
         KeyPair serverKeyPair = EncryptionUtils.createKeyPair();

@@ -89,7 +89,21 @@ public class SpoofedUpstream extends UpstreamSession {
         boolean ok = patchOne(orig, "javaToBedrockBlocks");
         ok |= patchOne(orig, "bedrockRuntimeMap");
         ok |= patchOne(orig, "javaToVanillaBedrockBlocks");
+        patchSingletonBlockDef(orig, "bedrockAir");
+        patchSingletonBlockDef(orig, "bedrockWater");
+        patchSingletonBlockDef(orig, "bedrockMovingBlock");
         return ok;
+    }
+
+    private static void patchSingletonBlockDef(BlockMappings orig, String fieldName) {
+        try {
+            Field f = BlockMappings.class.getDeclaredField(fieldName);
+            long offset = U.objectFieldOffset(f);
+            Object old = U.getObject(orig, offset);
+            if (old instanceof GeyserBedrockBlock gb && gb.getState() != null) {
+                U.putObject(orig, offset, new GeyserBedrockBlock(BlockHashUtils.fnv1a32Nbt(gb.getState()), gb.getState()));
+            }
+        } catch (Throwable ignored) {}
     }
 
     private static boolean patchOne(BlockMappings orig, String fieldName) {
