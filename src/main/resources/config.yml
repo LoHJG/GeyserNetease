@@ -8,4 +8,41 @@ disconnect-message: "This server only accepts NetEase clients."
 
 # Enable detailed console logging for NetEase authentication and packet handling.
 # Useful for debugging connection issues. Disable in production to reduce log spam.
+# When enabled it also traces every Bedrock packet in and out, which is the only way to see
+# how far a NetEase session got (the Bedrock stack itself only logs packets at TRACE level).
 debug-mode: false
+
+# Send a skin confirmation for the local player as soon as the game starts.
+# At that moment no skin data exists yet, so the entry is empty and NetEase clients have been
+# seen dropping the connection over it. Real skins are still confirmed from the actual
+# PlayerSkin/PlayerList packets, so leave this off unless you are testing that behaviour.
+confirm-skin-at-start-game: false
+
+# Packets never sent to NetEase clients.
+# These carry registries Geyser builds for its own (much newer) Bedrock version. The NetEase
+# client understands the packet format but not the newer item/creative data and dies parsing it,
+# which looks like a silent session that times out.
+# Removing the key entirely keeps the built-in default. Giving it an empty value in ANY form
+# ("dropped-packets:" or "dropped-packets: []") means send everything, which is what you want once
+# the real causes are fixed: withholding CreativeContentPacket crashes the client as soon as the
+# player opens the creative inventory.
+dropped-packets:
+
+# Rewrite block network IDs to the NetEase hash of the block state.
+# NetEase clients look blocks up by hash, so this is normally on. The hash is computed from
+# Geyser's block states, so it only matches the client for blocks whose state NBT is unchanged
+# between the client's Bedrock version and Geyser's. Set to false to send Geyser's plain index
+# IDs instead: blocks will be wrong, but it shows whether the hash mismatch is the problem.
+block-network-ids-hashed: true
+
+# Strip the block property table from the StartGame packet.
+# Geyser builds it for its own (newer) Bedrock version and an older NetEase client may fail
+# parsing it. On by default because that is the combination verified against a real 1.21.124
+# client. Turn it off to check whether it is still needed; data-driven blocks will then be
+# unknown to the client.
+clear-start-game-block-properties: true
+
+# Testing switch: send the creative inventory list with no items at all.
+# The block IDs inside it are normally translated from palette indices to hashed network IDs, so
+# this only matters if the creative inventory still crashes after that translation.
+empty-creative-content: false

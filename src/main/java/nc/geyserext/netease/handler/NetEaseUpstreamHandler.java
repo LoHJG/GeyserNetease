@@ -23,7 +23,7 @@ import org.cloudburstmc.protocol.common.PacketSignal;
 import org.geysermc.geyser.GeyserImpl;
 import org.geysermc.geyser.api.event.bedrock.SessionInitializeEvent;
 import org.geysermc.geyser.event.type.SessionLoadResourcePacksEventImpl;
-import org.geysermc.geyser.network.GameProtocol;
+import org.geysermc.geyser.network.bedrock.GameProtocol;
 import org.geysermc.geyser.registry.BlockRegistries;
 import org.geysermc.geyser.registry.Registries;
 import org.geysermc.geyser.session.GeyserSession;
@@ -54,10 +54,21 @@ public class NetEaseUpstreamHandler extends UpstreamHandlerBase {
         if (!isNetEase) return super.handle(packet);
 
         BedrockCodec codec = NeteaseCodecRegistry.getCodec(packet.getProtocolVersion());
-        if (codec == null) return super.handle(packet);
+        if (codec == null) {
+            if (NeteaseExtension.LOG != null) {
+                NeteaseExtension.LOG.info("[GeyserNetease] No NetEase codec for reported protocol v"
+                    + packet.getProtocolVersion() + "; falling back to the vanilla pipeline.");
+            }
+            return super.handle(packet);
+        }
 
         session.getUpstream().getSession().setCodec(codec);
         neteaseSession = new NeteaseSession(session, packet.getProtocolVersion(), codec);
+        if (NeteaseExtension.LOG != null) {
+            NeteaseExtension.LOG.info("[GeyserNetease] NetEase client: reported protocol v" + packet.getProtocolVersion()
+                + ", using codec " + codec.getMinecraftVersion() + " (codec protocol v" + codec.getProtocolVersion()
+                + ", raknet v" + (rakVer != null ? rakVer : -1) + ")");
+        }
 
         NetworkSettingsPacket resp = new NetworkSettingsPacket();
         resp.setCompressionAlgorithm(PacketCompressionAlgorithm.ZLIB);
@@ -126,28 +137,63 @@ public class NetEaseUpstreamHandler extends UpstreamHandlerBase {
         session.setBlockMappings(blockMappings);
         session.setItemMappings(Registries.ITEMS.forVersion(spoofedVersion));
 
+        // NetEase clients resolve blocks by a hash of the block state, so the runtime IDs are
+        // rewritten below. Both switches exist so the behaviour can be bisected on a live client.
+        boolean hashBlockIds = NeteaseExtension.CONFIG == null || NeteaseExtension.CONFIG.blockNetworkIdsHashed();
+
         boolean patched = false;
-        try { patched = nc.geyserext.netease.session.SpoofedUpstream.patchAll(blockMappings); }
-        catch (Throwable e) { NeteaseExtension.LOG.error("BlockMappings Unsafe: " + e.getMessage()); }
+        if (hashBlockIds) {
+            try { patched = nc.geyserext.netease.session.SpoofedUpstream.patchAll(blockMappings); }
+            catch (Throwable e) { NeteaseExtension.LOG.error("BlockMappings Unsafe: " + e.getMessage()); }
+        }
+        if (NeteaseExtension.LOG != null) {
+            NeteaseExtension.LOG.info("[GeyserNetease] Block network IDs: "
+                + (hashBlockIds ? "hashed from block state (patched=" + patched + ")" : "Geyser index IDs (hashing disabled)")
+                + ", registry version v" + spoofedVersion);
+            if (!hashBlockIds) {
+                // Index IDs only make sense for a client on Geyser's own palette version; for an
+                // older client every block resolves to the wrong state.
+                NeteaseExtension.LOG.warning("[GeyserNetease] block-network-ids-hashed is false: block IDs are "
+                    + "Geyser palette indices and will NOT match an older NetEase client. Expect wrong blocks; "
+                    + "this is only useful for finding what crashes the client.");
+            }
+            logKnownBlockIds(blockMappings);
+        }
 
         int maxId = 0;
         for (int i = 0; blockMappings.getDefinition(i) != null; i++) maxId = i;
         int[] rtToHash = new int[maxId + 1];
         boolean[] hValid = new boolean[maxId + 1];
+        java.util.Map<Integer, org.geysermc.geyser.registry.type.GeyserBedrockBlock> byHash = new java.util.HashMap<>();
         for (int i = 0; i <= maxId; i++) {
             var block = blockMappings.getDefinition(i);
             if (block != null) {
                 var gb = (org.geysermc.geyser.registry.type.GeyserBedrockBlock) block;
                 if (gb.getState() != null) {
-                    rtToHash[i] = nc.geyserext.netease.util.BlockHashUtils.fnv1a32Nbt(gb.getState());
+                    int hash = nc.geyserext.netease.util.BlockHashUtils.fnv1a32Nbt(gb.getState());
+                    rtToHash[i] = hash;
                     hValid[i] = true;
+                    byHash.put(hash, gb);
                 }
             }
         }
 
+        // The codec refuses to encode a block definition its registry does not know, and Geyser's
+        // registry looks blocks up by array index, which a hash is not. Hand the codec a registry
+        // that resolves hashes, so hashed IDs survive the round trip in both directions.
+        nc.geyserext.netease.util.HashAwareBlockRegistry blockRegistry =
+            new nc.geyserext.netease.util.HashAwareBlockRegistry(byHash, blockMappings);
         try {
+            session.getUpstream().getCodecHelper().setBlockDefinitions(blockRegistry);
+        } catch (Throwable e) {
+            NeteaseExtension.LOG.error("Installing hash-aware block registry failed: " + e.getMessage());
+        }
+
+        try {
+            var authData = session.getAuthData();
             var spoofed = new nc.geyserext.netease.session.SpoofedUpstream(
-                session.getUpstream(), session.getUpstream().getSession(), rtToHash, hValid, patched, neteaseSession.uid());
+                session.getUpstream(), session.getUpstream().getSession(), rtToHash, hValid, patched, neteaseSession.uid(),
+                authData != null ? authData.uuid() : null, blockRegistry);
             java.lang.reflect.Field upF = org.geysermc.geyser.session.GeyserSession.class.getDeclaredField("upstream");
             upF.setAccessible(true); upF.set(session, spoofed);
         } catch (Exception e) { NeteaseExtension.LOG.error("SpoofedUpstream inject failed: " + e.getMessage()); }
@@ -277,6 +323,29 @@ public class NetEaseUpstreamHandler extends UpstreamHandlerBase {
     }
 
     public NeteaseSession neteaseSession() { return neteaseSession; }
+
+    /**
+     * Logs the runtime ID the extension will actually put on the wire for a few blocks whose
+     * Bedrock network_id is fixed and known, so a live session can be checked against it:
+     * minecraft:stone must be -2144268767 and minecraft:air -604749536. Different values mean the
+     * client is being sent IDs it cannot resolve, which shows up as wrong blocks.
+     */
+    private static void logKnownBlockIds(org.geysermc.geyser.registry.type.BlockMappings mappings) {
+        String stone = null;
+        String air = null;
+        for (int i = 0; ; i++) {
+            var block = mappings.getDefinition(i);
+            if (block == null) break;
+            var state = block.getState();
+            if (state == null) continue;
+            String name = state.getString("name", "");
+            if (stone == null && "minecraft:stone".equals(name)) stone = i + "->" + block.getRuntimeId();
+            else if (air == null && "minecraft:air".equals(name)) air = i + "->" + block.getRuntimeId();
+            if (stone != null && air != null) break;
+        }
+        NeteaseExtension.LOG.info("[GeyserNetease] Sample block IDs (index->id sent): stone=" + stone
+            + " air=" + air + " | expected stone=-2144268767 air=-604749536");
+    }
 
     private static BedrockClientData buildFakeClientData(String name) {
         return GeyserImpl.GSON.fromJson(
