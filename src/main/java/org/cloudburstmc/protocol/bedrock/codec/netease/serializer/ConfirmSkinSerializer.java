@@ -5,15 +5,20 @@ import org.cloudburstmc.protocol.bedrock.codec.BedrockCodecHelper;
 import org.cloudburstmc.protocol.bedrock.codec.BedrockPacketSerializer;
 import org.cloudburstmc.protocol.bedrock.packet.ConfirmSkinPacket;
 
+import java.util.UUID;
+
 public class ConfirmSkinSerializer implements BedrockPacketSerializer<ConfirmSkinPacket> {
     public static final ConfirmSkinSerializer INSTANCE = new ConfirmSkinSerializer();
+
+    /** The helper rejects a null UUID, so never hand it one. */
+    private static final UUID NIL_UUID = new UUID(0L, 0L);
 
     @Override
     public void serialize(ByteBuf buffer, BedrockCodecHelper helper, ConfirmSkinPacket packet) {
         helper.writeArray(buffer, packet.getEntries(), (buf, h, entry) -> {
             buf.writeBoolean(entry.isValid());
-            h.writeUuid(buf, entry.getUuid());
-            h.writeByteArray(buf, entry.getSkinBytes());
+            h.writeUuid(buf, entry.getUuid() != null ? entry.getUuid() : NIL_UUID);
+            h.writeByteArray(buf, entry.getSkinBytes() != null ? entry.getSkinBytes() : new byte[0]);
         });
 
         for (ConfirmSkinPacket.SkinEntry entry : packet.getEntries()) {
